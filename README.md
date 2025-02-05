@@ -39,6 +39,8 @@ The dataset was collected via the Spotify Web API and includes:
 - **Acousticness, speechiness, and valence** negatively impact popularity.
 - **Robust regression** achieved an RMSE of ~4.5, significantly outperforming OLS.
 - **The model underestimates extreme popularity values**, highlighting the need for external data sources.
+- **The model appears to have a bias towards predicting lower popularity scores**, possibly due to a concentration of lower-popularity tracks in the dataset.
+- **Poor predictive performance suggests that simple linear models do not fully capture the factors that determine a track's popularity.**
 
 ## Limitations
 - The model only considers **musical attributes**, excluding factors like artist popularity, marketing, and playlist placements.
@@ -53,7 +55,6 @@ The dataset was collected via the Spotify Web API and includes:
 ## Repository Structure
 ```
 ├── data/                   # Contains the dataset used for analysis
-├── scripts/                # R scripts for data processing and modeling
 ├── figures/                # Contains visualizations used in the report
 ├── ReportAndPredictions.Rmd # R Markdown report with analysis and predictions
 ├── Spotify Report.pdf      # Final report summarizing findings
