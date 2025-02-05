@@ -19,7 +19,7 @@ The dataset was collected via the Spotify Web API and includes:
    - Investigated correlations between musical attributes and popularity.
    - Identified potential issues with multicollinearity and non-normality.
 
-   ![Correlation Heatmap](figures/correlation_map.png)
+   ![Correlation Heatmap](figures/correlation-map.png)
 
 2. **Regression Models:**
    - **Initial Linear Model (OLS):** Demonstrated significant violations of regression assumptions.
