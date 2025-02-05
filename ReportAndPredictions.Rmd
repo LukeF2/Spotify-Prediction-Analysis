@@ -1,0 +1,645 @@
+---
+title: "Final Report Math 158"
+author: "Luke Feng"
+date: "2024-11-30"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)    
+library(ggplot2)  
+library(dplyr)    
+library(car)
+```
+
+# Abstract
+
+This study examined the relationship between musical attributes and track popularity on Spotify using a dataset of over 160,000 tracks from 1921–2020. Regression analysis revealed that attributes like danceability and energy positively impact popularity, while valence, acousticness, and speechiness have negative effects. While traditional regression models were limited by violations of normality and heteroscedasticity, the combination of a Box-Cox transformation and robust regression significantly improved predictive accuracy, achieving consistent RMSE values of ~4.5 across training and test sets. These results emphasize the influence of rhythmic and energetic features on popularity, with opportunities for future research on genre-specific models and broader contextual factors.
+
+# Introduction
+
+As streaming platforms like Spotify amass vast amounts of data on user preferences, analyzing musical attributes to understand what makes a track popular has become increasingly viable. 
+
+We consider the following research question: Can we predict a track's popularity based on its musical attributes?
+
+To address these questions, we analyze a dataset focusing on Spotify's computed attributes such as danceability, energy, and valence. By investigating correlations and applying predictive models, we aim to uncover the relationships between these musical features and their impact on popularity. The primary focus of this study is to develop a predictive model for track popularity based on musical attributes, rather than to make inferential claims about these relationships.
+
+
+# Data Set
+
+The Spotify dataset consists of 160,000+ tracks from 1921-2020 found in Spotify as of June 2020. The data was collected by Turkish Data Scientist Yamaç Eren Ay, and was tabulated and retrieved from the Spotify Web API. Each row in the dataset corresponds to a track, each with variables such as Track ID, title, artist, and release data. In addition to these variables, some musical features were extracted, such as dancability, energy, and acousticness were extracted, and the value for each of these variables was calculated by Spotify based on a range of parameters. 
+
+Let's give a sample of the dataset. 
+
+```{r}
+spotify_data <- read_csv("/Users/lukefeng/Downloads/data.csv")
+
+head(spotify_data)
+```
+
+```{r}
+summary(spotify_data)
+```
+
+Each row contains the variables for one track.
+
+Below is a list of all variables:
+
+Identifiers:
+
+- id: A unique identifier for each track.
+- name: The track's title.
+- artists: Artist/s who participated in the track.
+- duration_ms: Length of the track in milliseconds (ms).
+- release_date: The track's release date in MM/DD/YYYY, or at the minimum, YYYY.
+- year: The year in which the track was released.
+
+Musical Attributes:
+
+- **Acousticness**: Likelihood of a track being acoustic (0.0 to 1.0).
+- **Danceability**: Suitability of a track for dancing (0.0 to 1.0).
+- **Energy**: Intensity and activity level of a track (0.0 to 1.0).
+- **Instrumentalness**: Likelihood of a track containing no vocals.
+- **Liveness**: Presence of an audience sound in the recording.
+- **Loudness**: Overall loudness of a track in decibels (dB).
+- **Speechiness**: Presence of spoken words.
+- **Tempo**: Beats per minute (BPM) of the track.
+- **Valence**: Positiveness conveyed by the track (0.0 to 1.0).
+- **Mode**: Melodic modality (0 = Minor, 1 = Major).
+- **Key**: Key signature estimated for the track.
+- **Popularity**: A score from 0 to 100 based on Spotify’s algorithm, where higher values indicate greater popularity.
+- **Explicit**: Flag indicating explicit content (1 = True, 0 = False).
+
+
+For simplicity's sake, we deleted some irrelevant columns:
+
+- id: No further analysis can be drawn from the track's unique identifier
+- release_date: Since some of the data is incomplete (e.g. no date, no month), this will be dropped as it will be impossible to draw annual trends for time series
+- liveness: This is just a measure of whether or not a track was performed lvie or not, thus not being a direct measure of the music itself
+
+Additionally, for our analysis, we are only using the variables listed under Musical Attributes, as those are the only variables we are interested in. 
+
+
+# Analysis
+
+The analysis began with an exploratory data analysis (EDA) phase to understand the dataset and uncover patterns between musical attributes and track popularity. Musical Attributes such as danceability, energy, and valence were selected based on their possible influence on popularity. 
+
+```{r fig.cap = "A correlation heatmmap to display correlations between popularity and other attributes to assess relationships.",echo=FALSE}
+library(corrplot)
+
+# Select relevant columns and calculate correlation matrix
+cor_matrix <- cor(spotify_data[, c("popularity", "danceability", "energy", "loudness", "valence", 
+                                   "tempo", "acousticness", "instrumentalness", "speechiness", 
+                                   "liveness", "mode")])
+
+# Plot correlation matrix
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8)
+
+```
+
+We constructed a correlation matrix to explore and visualize the relationships between variables, which revealed that attributes such as danceability, energy, and loudness were positively correlated with popularity, while acousticness and speechiness were negatively correlated. This initial exploration also hinted at a potential multicollinearity among variables like energy and loudness. 
+
+
+
+
+```{r, include=FALSE}
+set.seed(123)  # Set a seed for reproducibility
+
+# Step 1: Randomly sample 10 indices for the test set
+test_indices <- sample(1:nrow(spotify_data), 8000)
+
+# Step 2: Create test and training sets
+test_set <- spotify_data[test_indices, ]
+train_set <- spotify_data[-test_indices, ]
+
+# View the resulting datasets
+cat("Test Set:\n")
+print(test_set)
+cat("Training Set:\n")
+print(train_set)
+```
+Following this EDA, we fitted an initial linear regression model with popularity as the response and the selected musical attributes as the predictors. 
+
+```{r}
+model <- lm(popularity ~ danceability + energy + loudness + valence + tempo + acousticness + instrumentalness + speechiness + mode + key, data = train_set)
+
+summary(model)
+```
+Since Key was not statistically significant, we removed it from the model.
+
+To assess the validity of regression assumptions, several diagnostic tests were conducted:
+
+```{r fig.cap = "QQ Plot to check for Normality.",echo=FALSE}
+plot(model, which = 2)
+```
+
+Normality of Residuals: A Q-Q plot of the residuals was generated, revealing deviations from normality. This finding was confirmed using the Shapiro-Wilk test, which returned a low p-value, indicating non-normal residuals.
+
+```{r}
+model_sample <- sample(model$residuals, 5000)
+shapiro.test(model_sample)
+```
+Homoscedasticity: The Breusch-Pagan (Non-constant Variance Score) test was performed, yielding a significant p-value, confirming heteroscedasticity in the residuals.
+
+```{r}
+ncvTest(model)
+```
+
+However, assumptions of homoscedasticity (constant variance of residuals) and normality of residuals are primarily important for inference-based models, where the goal is to estimate coefficients and calculate reliable p-values and confidence intervals. These assumptions ensure the validity of statistical tests and the interpretability of standard errors.
+
+In our case (a predictive model) however, the focus is on minimizing prediction error and improving generalization to new data. The distribution or variance of residuals does not directly affect the model’s ability to make accurate predictions. As long as the model captures the underlying patterns in the data and generalizes well to unseen data (e.g., low RMSE on the test set), violations of these assumptions do not compromise the model's utility for prediction.
+
+```{r}
+calculate_rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+train_predictions <- predict(model, newdata = train_set)
+rmse_train <- calculate_rmse(train_set$popularity, train_predictions)
+
+test_predictions <- predict(model, newdata = test_set)
+rmse_test <- calculate_rmse(test_set$popularity, test_predictions)
+
+cat("RMSE on Training Set:", rmse_train, "\n")
+cat("RMSE on Test Set:", rmse_test, "\n")
+
+```
+
+RMSE Training Set: 15.87012 
+RMSE Test Set: 16.00235 
+We then checked for influential points:
+
+```{r, results = "hide"}
+cooks_threshold <- 4 / length(cooks.distance(model))
+high_cooks <- cooks.distance(model) > cooks_threshold
+
+hat_threshold <- 2 * mean(hatvalues(model))
+high_leverage <- hatvalues(model) > hat_threshold
+
+high_residuals <- abs(rstandard(model)) > 2
+influential_points <- which(high_cooks | high_leverage | high_residuals)
+
+influential_points
+```
+
+Here we saw with 4/N as the threshold, about 15,000+ datapoints were omitted.
+
+```{r}
+plot(cooks.distance(model), type = "h", main = "Cook's Distance", ylab = "Cook's Distance")
+abline(h = cooks_threshold, col = "red", lty = 2)
+
+plot(hatvalues(model), type = "h", main = "Hat Values", ylab = "Hat Values")
+abline(h = hat_threshold, col = "blue", lty = 2)
+
+```
+
+After looking at the plots, we adjust the threshold to around 0.0002 because the size of our dataset makes 4/n extremely small, flagging many datapoints as influential. 
+
+```{r}
+high_cooks <- which(cooks.distance(model) > 0.0002) 
+high_cooks
+```
+
+
+```{r}
+train_cleaned <- train_set[-high_cooks, ]
+```
+
+
+```{r}
+model_cleaned <- lm(popularity ~ danceability + energy + loudness + valence + tempo + acousticness + instrumentalness + speechiness + liveness + mode + key, data = train_cleaned)
+summary(model_cleaned)
+```
+We saw a minimal increase in R^2, from 0.459 to 0.464
+Let's see if it improves any of the regression assumptions:
+
+```{r}
+model_sample <- sample(model_cleaned$residuals, 5000)
+shapiro.test(model_sample)
+```
+
+```{r}
+ncvTest(model_cleaned)
+```
+
+Unfortunately, the p-values are still extremely low, let's see if it at least improves our RMSE:
+
+```{r}
+calculate_rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+train_predictions <- predict(model, newdata = train_cleaned)
+rmse_train <- calculate_rmse(train_set$popularity, train_predictions)
+
+test_predictions <- predict(model, newdata = test_set)
+rmse_test <- calculate_rmse(test_set$popularity, test_predictions)
+
+cat("RMSE on Training Set:", rmse_train, "\n")
+cat("RMSE on Test Set:", rmse_test, "\n")
+
+```
+
+It did not improve our RMSE or R^2 or any of our regression assumptions by a significant amount. Thus, we decide not to remove influential points so as to avoid losing valuable information or skewing our dataset.
+
+We move forward with the original dataset:
+
+To assess multicollinearity among predictors, the Variance Inflation Factor (VIF) was calculated after fitting the model.
+
+```{r}
+vif_values <- vif(model)
+print(vif_values)
+```
+
+The VIF results indicated that multicollinearity was within acceptable limits, allowing all predictors to remain in the model. This step ensured the stability of coefficient estimates.
+
+To address the diagnostic findings and potentially enhance the model’s predictive accuracy, a Box-Cox transformation was applied to the response variable. While violations of normality and heteroscedasticity are less critical for predictive models, the transformation was explored to assess whether it could improve the linear relationship between the predictors and the response, thereby reducing prediction error
+
+```{r fig.cap = "Box Cox Transformation"}
+library(MASS)
+spotify_data$popularity_adjusted <- spotify_data$popularity + 1  # Adding 1 to ensure positivity
+
+boxcox(lm(popularity_adjusted ~ danceability + energy + loudness + valence + tempo + 
+          acousticness + instrumentalness + speechiness + liveness + mode, 
+          data = spotify_data), 
+       lambda = seq(-0.2, 0.6, by = 0.1), plotit = TRUE)
+
+boxcox(lm(popularity_adjusted ~ danceability + energy + loudness + valence + tempo + 
+          acousticness + instrumentalness + speechiness + liveness + mode, 
+          data = spotify_data), 
+       lambda = seq(0.5, 0.7, by = 0.05), plotit = TRUE)
+```
+
+To ensure the response variable was positive, a small constant (+1) was added to all values before applying the Box-Cox transformation. A range of potential values for the Box-Cox parameter, lambda, was evaluated, starting with a broad search across [-0.2,0.6]. The log-likelihood plot suggested an optimal value of lambda = 0.6, which was then refined by narrowing the range for more precision.
+
+```{r}
+lambda_optimal <- 0.6
+train_set$popularity_boxcox <- ((train_set$popularity + 1)^lambda_optimal - 1) / lambda_optimal
+```
+
+```{r}
+test_set$popularity_boxcox <- ((test_set$popularity + 1)^lambda_optimal - 1) / lambda_optimal
+
+```
+
+```{r}
+lm_train <- lm(popularity_boxcox ~ danceability + energy + loudness + valence + tempo + 
+               acousticness + instrumentalness + speechiness + liveness + mode, 
+               data = train_set)
+```
+
+Now we test the transformed model for the normality assumption.
+
+```{r}
+model_sample1 <- sample(lm_train$residuals, 5000)
+shapiro.test(model_sample1)
+```
+After applying the optimal transformation, our residuals showed improvement, but our Shapiro-Wilk test still produced a significant p-value (1.286e-12), indicating non-normality in our residuals. 
+
+```{r, echo = FALSE}
+calculate_rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+train_predictions <- predict(lm_train, newdata = train_set)
+rmse_train <- calculate_rmse(train_set$popularity, train_predictions)
+
+test_predictions <- predict(lm_train, newdata = test_set)
+rmse_test <- calculate_rmse(test_set$popularity, test_predictions)
+
+cat("RMSE on Training Set:", rmse_train, "\n")
+cat("RMSE on Test Set:", rmse_test, "\n")
+
+```
+
+We applied the Box-Cox transformation to address residual non-normality and stabilize variance. However, the transformation increased RMSE to 28 on both training and test sets, likely due to a mismatch between the transformation and the underlying data structure.
+
+```{r}
+robust_model2 <- rlm(popularity ~ danceability + energy + loudness + valence + tempo + acousticness,data = train_set)
+```
+
+
+As a result, Robust regression was employed because it effectively addresses the influence of outliers and non-normal residuals, leading to improved predictive performance.
+
+
+```{r}
+train_predictions_robust <- predict(robust_model2, newdata = train_set)
+rmse_train_robust <- sqrt(mean((train_set$popularity - train_predictions_robust)^2))
+cat("RMSE on Training Set (Robust Model):", rmse_train_robust, "\n")
+```
+```{r}
+# Calculate RMSE on the test set
+test_predictions_robust <- predict(robust_model2, newdata = test_set)
+rmse_test_robust <- sqrt(mean((test_set$popularity - test_predictions_robust)^2))
+cat("RMSE on Test Set (Robust Model):", rmse_test_robust, "\n")
+```
+
+The Box-Cox transformation increased RMSE in the OLS model and was initially excluded. However, its inclusion in the robust regression model significantly improved predictive accuracy (RMSE: 4.5). 
+
+```{r}
+model_sample <- sample(robust_model2$residuals, 5000)
+shapiro.test(model_sample)
+```
+
+```{r}
+library(MASS)
+
+robust_model <- rlm(popularity_boxcox ~ danceability + energy + loudness + valence + tempo + 
+                    acousticness + instrumentalness + speechiness + liveness + mode, 
+                    data = train_set)
+
+summary(robust_model)
+
+```
+```{r}
+train_predictions_robust <- predict(robust_model, newdata = train_set)
+rmse_train_robust <- sqrt(mean((train_set$popularity_boxcox - train_predictions_robust)^2))
+cat("RMSE on Training Set (Robust Model):", rmse_train_robust, "\n")
+```
+```{r}
+test_predictions_robust <- predict(robust_model, newdata = test_set)
+rmse_test_robust <- sqrt(mean((test_set$popularity_boxcox- test_predictions_robust)^2))
+cat("RMSE on Test Set (Robust Model):", rmse_test_robust, "\n")
+```
+
+
+A possible explanation for this is that the Box-Cox transformation prepared the data by addressing variance and linearity issues, allowing robust regression to work more effectively by down-weighting outliers without being overwhelmed by residual structure problems. This combination resulted in a model that both captured the central trends in the data and minimized the influence of extreme or noisy points, leading to a significant improvement in RMSE.
+
+This approach resulted in a dramatic improvement in predictive accuracy, with the robust model achieving RMSE values of approximately 4.5 on both the training and test sets. This similarity indicates that the model generalizes well to new, unseen data, with minimal overfitting, as the model’s performance is consistent across both sets. 
+
+The robust regression model significantly improved predictive accuracy despite residuals failing normality and homoscedasticity tests. Since the goal of this analysis is prediction rather than inference, these violations do not undermine the model’s utility. The robust regression approach emphasizes minimizing prediction error rather than strictly adhering to classical regression assumptions.
+
+# Exploration of Heteroscedasticity
+
+While heteroscedasticity is a secondary concern, we still performed the Breusch-Pagan test on the Robust model. Incidentally, we still saw that the homoscedasticity assumption was violated.
+
+Given the presence of heteroscedasticity in the residuals, as identified by diagnostic tests such as the Breusch-Pagan test, a Weighted Least Squares (WLS) model was explored to address this issue, in an attempt to possibly improve the predictive accuracy of the model. The WLS was chosen to reduce heteroscedasticity because it  assigns weights inversely proportional to the variance of the residuals, thereby reducing the impact of heteroscedasticity and stabilizing the variance across fitted values.
+
+```{r}
+wls_weights <- 1 / abs(model$residuals)  # Inverse of residuals as weights
+
+wls_model <- lm(popularity_boxcox ~ danceability + energy + loudness + valence + tempo + 
+                acousticness + instrumentalness + speechiness + liveness + mode, 
+                data = train_set, weights = wls_weights)
+
+summary(wls_model)
+```
+
+```{r}
+# Calculate RMSE on training set
+train_predictions <- predict(wls_model, newdata = train_set)
+rmse_train <- sqrt(mean((train_set$popularity_boxcox - train_predictions)^2))
+cat("RMSE on Training Set:", rmse_train, "\n")
+```
+
+```{r}
+# Calculate RMSE on test set
+test_predictions <- predict(wls_model, newdata = test_set)
+rmse_test <- sqrt(mean((test_set$popularity_boxcox - test_predictions)^2))
+cat("RMSE on Test Set:", rmse_test, "\n")
+
+```
+
+```{r} 
+ncvTest(wls_model)
+```
+
+
+The WLS model achieved RMSE values of approximately 4.59 on the training set and 4.62 on the test set, which were very close to the robust regression model's performance. However, diagnostic tests revealed that the WLS model did not fully resolve the issue of heteroscedasticity, as the Breusch-Pagan test remained significant. This outcome indicated that WLS, while theoretically designed to address heteroscedasticity, was insufficient in this context to completely eliminate the issue.
+
+While Weighted Least Squares (WLS) was explored as an alternative to address heteroscedasticity, it added complexity to the modeling process by requiring an explicit weighting scheme and assumptions about the residual variance structure. In contrast, robust regression automatically down-weights the influence of outliers without requiring these additional steps. Despite these complexities, WLS achieved similar RMSE to robust regression, ultimately making robust regression the simpler and more practical choice for this analysis.
+
+# Exploration of Nonlinear Methods
+
+To evaluate potential nonlinear relationships and interactions between musical attributes, a regression tree model was implemented. This model splits the dataset based on thresholds in predictors, providing insights into how specific attributes like acousticness, loudness, and speechiness influence track popularity.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+
+tree_model <- rpart(popularity ~ danceability + energy + loudness + valence + tempo + 
+                    acousticness + instrumentalness + speechiness + liveness + mode, 
+                    data = train_set, method = "anova")
+
+rpart.plot(tree_model, type = 3, digits = 3, fallen.leaves = TRUE)
+
+tree_predictions <- predict(tree_model, newdata = test_set)
+
+tree_rmse <- sqrt(mean((test_set$popularity - tree_predictions)^2))
+cat("RMSE for Regression Tree:", tree_rmse, "\n")
+
+```
+The regression tree achieved an RMSE of 15.96, which was significantly higher than the RMSE of the robust regression model (4.5). While it provided insights into attribute thresholds, its predictive accuracy (RMSE of 15.96) was significantly lower than that of the robust regression model, reaffirming the effectiveness of linear models for this dataset.
+
+# Using our model to make predictions
+
+Let's test our model's ability to make predictions.
+
+Since this model is based on tracks between 1921-2020, let's take one of the most popular songs from the 2010-2020's decade according to spotify.
+
+
+```{r}
+library(tidyverse)
+
+song_title <- "One Dance"  # Replace with actual song name
+artist_name <- "Drake"     # Replace with actual artist name
+
+song_features <- spotify_data %>%
+  filter(name == song_title & str_detect(artists, artist_name))
+
+print(song_features)
+```
+Since song_features might have more than one row, let's ensure we select only one.
+
+```{r}
+if (nrow(song_features) > 0) {
+  song_for_prediction <- song_features[1, c("acousticness", "danceability", "energy", 
+                                            "instrumentalness", "liveness", "loudness", 
+                                            "speechiness", "tempo", "valence", "mode")]
+
+  song_for_prediction <- as.data.frame(song_for_prediction)
+} else {
+  print("Song not found in dataset.")
+}
+
+```
+
+
+Now that we've extracted the features, let's make a prediction using our robust model:
+
+```{r}
+# Predict the popularity of the selected song
+if (nrow(song_for_prediction) > 0) {
+  predicted_popularity <- predict(robust_model, newdata = song_for_prediction)
+  cat("Predicted Popularity Score:", predicted_popularity, "\n")
+} else {
+  print("No prediction could be made due to missing song data.")
+}
+```
+
+Let's compare this with it's actual popularity score:
+```{r}
+library(dplyr)
+
+song_title <- "One Dance"  # Replace with actual song name
+artist_name <- "Drake"     # Replace with actual artist name
+
+song_popularity <- spotify_data %>%
+  filter(name == song_title & str_detect(artists, artist_name)) %>%
+  arrange(desc(popularity)) %>%  # Sort by highest popularity
+  slice(1) %>%  # Select the top row
+  pull(popularity)  # Extract as numeric value
+
+# Print the highest popularity score
+print(song_popularity)
+```
+
+That wasn't very accurate, our model predicted a popularity score of 18, as opposed to its true popularity score, 82.
+
+
+Let's try this again with another one of 2010-2020's most popular songs and one of my personal favorites, "White Ferrari" by Frank Ocean
+
+```{r}
+library(tidyverse)
+
+song_title <- "White Ferrari"  # Replace with actual song name
+artist_name <- "Frank Ocean"     # Replace with actual artist name
+
+song_features <- spotify_data %>%
+  filter(name == song_title & str_detect(artists, artist_name))
+
+print(song_features)
+```
+```{r}
+if (nrow(song_features) > 0) {
+  song_for_prediction <- song_features[1, c("acousticness", "danceability", "energy", 
+                                            "instrumentalness", "liveness", "loudness", 
+                                            "speechiness", "tempo", "valence", "mode")]
+
+  song_for_prediction <- as.data.frame(song_for_prediction)
+} else {
+  print("Song not found in dataset.")
+}
+```
+
+```{r}
+if (nrow(song_for_prediction) > 0) {
+  predicted_popularity <- predict(robust_model, newdata = song_for_prediction)
+  cat("Predicted Popularity Score:", predicted_popularity, "\n")
+} else {
+  print("No prediction could be made due to missing song data.")
+}
+```
+
+```{r}
+library(dplyr)
+
+song_title <- "White Ferrari"  # Replace with actual song name
+artist_name <- "Frank Ocean"     # Replace with actual artist name
+
+song_popularity <- spotify_data %>%
+  filter(name == song_title & str_detect(artists, artist_name)) %>%
+  arrange(desc(popularity)) %>%  # Sort by highest popularity
+  slice(1) %>%  # Select the top row
+  pull(popularity)  # Extract as numeric value
+
+print(song_popularity)
+
+```
+
+That also didn't work very well, our model predicted 8.7 as opposed to the true value of 73.
+
+Perhaps it doesn't work too well on modern music, let's try a historical favorite, "Lacrimosa", by Wolfgang Amadeus Mozart
+
+```{r}
+library(tidyverse)
+
+song_title <- "Lacrimosa"  # Replace with actual song name
+artist_name <- "Wolfgang Amadeus Mozart"     # Replace with actual artist name
+
+song_features <- spotify_data %>%
+  filter(name == song_title & str_detect(artists, artist_name))
+
+print(song_features)
+```
+```{r}
+if (nrow(song_features) > 0) {
+  song_for_prediction <- song_features[1, c("acousticness", "danceability", "energy", 
+                                            "instrumentalness", "liveness", "loudness", 
+                                            "speechiness", "tempo", "valence", "mode")]
+
+  song_for_prediction <- as.data.frame(song_for_prediction)
+} else {
+  print("Song not found in dataset.")
+}
+```
+
+```{r}
+if (nrow(song_for_prediction) > 0) {
+  predicted_popularity <- predict(robust_model, newdata = song_for_prediction)
+  cat("Predicted Popularity Score:", predicted_popularity, "\n")
+} else {
+  print("No prediction could be made due to missing song data.")
+}
+```
+```{r}
+library(dplyr)
+
+song_title <- "Lacrimosa"  # Replace with actual song name
+artist_name <- "Wolfgang Amadeus Mozart"     # Replace with actual artist name
+
+song_popularity <- spotify_data %>%
+  filter(name == song_title & str_detect(artists, artist_name)) %>%
+  arrange(desc(popularity)) %>%  # Sort by highest popularity
+  slice(1) %>%  # Select the top row
+  pull(popularity)  # Extract as numeric value
+
+print(song_popularity)
+
+```
+
+That didn't work too well either, our model predicted 3.3 as opposed to the actual value of 49.
+
+
+# Results
+
+The initial linear regression model achieved RMSE values of 15 on the training set and 16 on the test set. However, diagnostics revealed significant deviations from normality and heteroscedasticity in the residuals, as well as sensitivity to outliers. These issues likely inflated the RMSE and indicated that the initial model did not fully capture the underlying patterns in the data.
+
+To address these limitations, a robust regression model was implemented. The robust regression model achieved an RMSE of 4.5 with the Box-Cox transformed response variable, compared to 15 without the transformation. This demonstrated the complementary effect of the transformation when combined with robust regression. This substantial improvement indicates that the robust regression model effectively mitigated the influence of outliers and deviations from normality, providing more accurate predictions.
+
+An RMSE of 4.5 on a 0–100 scale of popularity means the model’s predictions deviate from actual values by an average of 4.5 points, representing just 4.5% of the total range. This level of error indicates that the model provides reasonably accurate predictions, particularly given the variability in the data and the focus solely on musical attributes. The robust model’s performance represents a significant improvement compared to the original model’s RMSE of 15–16.
+
+The robust regression model demonstrated that popularity could be predicted with reasonable accuracy based on musical attributes alone. The findings suggest that energetic, rhythmic, and emotionally intense features play a pivotal role in determining a track’s success. These insights align with broader trends in music consumption, where high-energy tracks dominate popular charts.
+
+Our model also consistently underestimated popularity scores, particularly for highly popular songs (One Dance, White Ferrari) and historically significant pieces (Lacrimosa). This suggests that musical attributes alone are not sufficient to predict a song’s success, as external factors—such as artist recognition, marketing strategies, and playlist placements—play a crucial role in determining popularity. Furthermore, the model appears to have a bias towards predicting lower popularity scores, possibly due to a concentration of lower-popularity tracks in the dataset. Additionally, genre and temporal effects may influence popularity in ways that a single regression model cannot fully capture.
+
+# Limitations of Study
+
+1. Limited Scope of Variables: The model only considers specific musical attributes (e.g., danceability, energy, loudness) as predictors of popularity. There are other important contextual factors, such as artist popularity, genre, promotion efforts, and listener demographics, are not included in the model.
+
+2. Simplistic Modeling Approach: This study largely focused on linear relationships between predictors and popularity, which may oversimplify interactions or nonlinear patterns in the data. While robust regression provided strong predictive accuracy, future research could explore advanced machine learning models, such as random forests or neural networks, to capture more complex patterns.
+
+3. Data Source Bias: The dataset was collected from Spotify and may reflect biases in Spotify’s algorithms for determining popularity scores. A broader analysis using data from other platforms, such as Apple Music, could could yield more generalizable results.
+
+4. Normality and Homoscedasticity: This study prioritized predictive accuracy over strict adherence to traditional regression assumptions like normality of residuals and homoscedasticity. While robust regression mitigates the influence of outliers and non-normality, some violations of these assumptions remain. However, they are not critical in this predictive context.
+
+# Conclusion
+
+This study demonstrated that musical attributes such as danceability, energy, and loudness positively influence track popularity, while valence, acousticness, and speechiness negatively impact it. Using a robust regression model, the analysis achieved an RMSE of 4.5 on a 0–100 scale, reflecting strong predictive accuracy and highlighting the importance of energetic and rhythmic features in driving popularity.
+
+The robust regression model’s ability to handle outliers and deviations from normality made it the most suitable choice for this analysis, outperforming both the initial linear regression model and the Weighted Least Squares (WLS) approach. While the study focused exclusively on musical attributes, its findings align with broader trends in music consumption and provide a foundation for future research.
+
+Violations of normality and heteroscedasticity persisted in the final model but were deemed irrelevant for predictive purposes. These findings provide a foundation for understanding the relationship between musical attributes and popularity, with practical implications for artists, producers, and marketers.
+
+While a regression tree model was explored to capture nonlinear relationships, its RMSE of 15.96 highlighted its limited predictive accuracy compared to robust regression. This finding supports the conclusion that simpler linear models are more effective for this dataset while providing opportunities to explore nonlinear methods further in future work.
+
+Future work could expand this study by incorporating contextual factors, exploring other nonlinear methods, and addressing dataset bias through multi-platform analyses. These enhancements would further clarify the drivers of track popularity and improve model generalizability.
+
+
+
+
+
