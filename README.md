@@ -19,7 +19,7 @@ The dataset was collected via the Spotify Web API and includes:
    - Investigated correlations between musical attributes and popularity.
    - Identified potential issues with multicollinearity and non-normality.
 
-   ![Correlation Heatmap](figures/correlation_heatmap.png)
+   ![Correlation Heatmap](figures/correlation_map.png)
 
 2. **Regression Models:**
    - **Initial Linear Model (OLS):** Demonstrated significant violations of regression assumptions.
@@ -27,14 +27,12 @@ The dataset was collected via the Spotify Web API and includes:
    - **Robust Regression Model:** Mitigated the influence of outliers and improved predictive accuracy.
    - **Weighted Least Squares (WLS):** Explored as an alternative approach but showed minimal improvements.
 
-   ![QQ Plot for Normality](figures/qq_plot.png)
-
 3. **Prediction Evaluation:**
    - Compared predicted popularity scores with actual values.
    - Observed that the model consistently under-predicted highly popular songs.
    - Identified external factors (marketing, social trends, playlist placements) that impact popularity beyond musical attributes.
 
-   ![Predicted vs Actual Popularity](figures/predicted_vs_actual.png)
+   ![Predicted vs Actual Popularity](figures/predictions.png)
 
 ## Key Findings
 - **Danceability, energy, and loudness** positively correlate with popularity.
